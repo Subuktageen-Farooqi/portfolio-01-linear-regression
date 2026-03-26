@@ -12,6 +12,27 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
+DEFAULT_LOW_RISK_THRESHOLD = 33.0
+DEFAULT_HIGH_RISK_THRESHOLD = 66.0
+
+class StandardScaler:
+    def __init__(self) -> None:
+        self.mean_: np.ndarray | None = None
+        self.scale_: np.ndarray | None = None
+
+    def fit(self, array: np.ndarray) -> "StandardScaler":
+        self.mean_ = array.mean(axis=0)
+        scale = array.std(axis=0)
+        scale[scale == 0.0] = 1.0
+        self.scale_ = scale
+        return self
+
+    def transform(self, array: np.ndarray) -> np.ndarray:
+        if self.mean_ is None or self.scale_ is None:
+            raise RuntimeError("Scaler has not been fitted yet.")
+        return (array - self.mean_) / self.scale_
+
+
 
 def repo_root() -> Path:
     """Resolve repository root from the src package location."""
@@ -43,76 +64,19 @@ def load_csv_xy(path: Path) -> tuple[np.ndarray, np.ndarray]:
     return x, y
 
 
-def compute_regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    y_true_flat = np.asarray(y_true).reshape(-1)
-    y_pred_flat = np.asarray(y_pred).reshape(-1)
-    return {
-        "mae": float(mean_absolute_error(y_true_flat, y_pred_flat)),
-        "rmse": float(np.sqrt(mean_squared_error(y_true_flat, y_pred_flat))),
-        "r2": float(r2_score(y_true_flat, y_pred_flat)),
-    }
+def risk_band_from_score(score: float, low_threshold: float, high_threshold: float) -> str:
+    """Map a continuous score to Low/Medium/High risk bands.
 
+    Threshold semantics:
+    - Low: score < low_threshold
+    - Medium: low_threshold <= score <= high_threshold
+    - High: score > high_threshold
+    """
+    if low_threshold >= high_threshold:
+        raise ValueError("low_threshold must be lower than high_threshold")
 
-def save_metrics_json(path: Path, metrics: dict[str, object]) -> None:
-    path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-
-
-def save_test_predictions_csv(path: Path, y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    payload = pd.DataFrame(
-        {
-            "actual": np.asarray(y_true).reshape(-1),
-            "predicted": np.asarray(y_pred).reshape(-1),
-            "residual": np.asarray(y_true).reshape(-1) - np.asarray(y_pred).reshape(-1),
-        }
-    )
-    payload.to_csv(path, index=False)
-
-
-def plot_loss_curve(path: Path, history: list[dict[str, float]]) -> None:
-    sns.set_theme(style="whitegrid")
-    epochs = [int(row["epoch"]) for row in history]
-    train_loss = [row["train_loss"] for row in history]
-    val_loss = [row["val_loss"] for row in history]
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(epochs, train_loss, label="Train loss", linewidth=2)
-    ax.plot(epochs, val_loss, label="Val loss", linewidth=2)
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("MSE loss")
-    ax.set_title("Training and Validation Loss")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
-def plot_pred_vs_actual(path: Path, y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    sns.set_theme(style="whitegrid")
-    y_true_flat = np.asarray(y_true).reshape(-1)
-    y_pred_flat = np.asarray(y_pred).reshape(-1)
-
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(y_true_flat, y_pred_flat, alpha=0.75, edgecolors="none")
-    lower = min(y_true_flat.min(), y_pred_flat.min())
-    upper = max(y_true_flat.max(), y_pred_flat.max())
-    ax.plot([lower, upper], [lower, upper], linestyle="--", color="black", linewidth=1)
-    ax.set_xlabel("Actual")
-    ax.set_ylabel("Predicted")
-    ax.set_title("Predicted vs Actual (Test)")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
-def plot_residuals(path: Path, y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    sns.set_theme(style="whitegrid")
-    residuals = np.asarray(y_true).reshape(-1) - np.asarray(y_pred).reshape(-1)
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    sns.histplot(residuals, bins=30, kde=True, ax=ax)
-    ax.set_xlabel("Residual (Actual - Predicted)")
-    ax.set_ylabel("Count")
-    ax.set_title("Residual Distribution (Test)")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    if score < low_threshold:
+        return "Low"
+    if score <= high_threshold:
+        return "Medium"
+    return "High"
