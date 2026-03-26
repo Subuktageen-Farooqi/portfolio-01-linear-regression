@@ -12,6 +12,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from utils import StandardScaler
+
 PREDICTOR_COLUMNS = [
     "temperature_c",
     "humidity_percent",
@@ -38,24 +40,6 @@ class SmallMLP(nn.Module):
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         return self.network(features)
-
-
-class StandardScaler:
-    def __init__(self) -> None:
-        self.mean_: np.ndarray | None = None
-        self.scale_: np.ndarray | None = None
-
-    def fit(self, array: np.ndarray) -> "StandardScaler":
-        self.mean_ = array.mean(axis=0)
-        scale = array.std(axis=0)
-        scale[scale == 0.0] = 1.0
-        self.scale_ = scale
-        return self
-
-    def transform(self, array: np.ndarray) -> np.ndarray:
-        if self.mean_ is None or self.scale_ is None:
-            raise RuntimeError("Scaler has not been fitted yet.")
-        return (array - self.mean_) / self.scale_
 
 
 def repo_root() -> Path:
