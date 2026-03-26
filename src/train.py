@@ -11,6 +11,14 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+from utils import (
+    compute_regression_metrics,
+    plot_loss_curve,
+    plot_pred_vs_actual,
+    plot_residuals,
+    save_metrics_json,
+    save_test_predictions_csv,
+)
 
 PREDICTOR_COLUMNS = [
     "temperature_c",
@@ -77,6 +85,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-size", type=float, default=0.15)
     parser.add_argument("--test-size", type=float, default=0.15)
     parser.add_argument("--hidden-dim", type=int, default=32)
+    parser.add_argument(
+        "--save-test-predictions",
+        action="store_true",
+        help="Write outputs/test_predictions.csv for manual inspection.",
+    )
     return parser.parse_args()
 
 
@@ -146,6 +159,18 @@ def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device:
             rmses.append(rmse(outputs, targets))
 
     return float(np.mean(losses)), float(np.mean(rmses))
+
+
+def predict(model: nn.Module, loader: DataLoader, device: torch.device) -> tuple[np.ndarray, np.ndarray]:
+    model.eval()
+    predictions: list[np.ndarray] = []
+    targets: list[np.ndarray] = []
+    with torch.no_grad():
+        for features, batch_targets in loader:
+            outputs = model(features.to(device))
+            predictions.append(outputs.cpu().numpy().reshape(-1))
+            targets.append(batch_targets.cpu().numpy().reshape(-1))
+    return np.concatenate(predictions), np.concatenate(targets)
 
 
 def main() -> None:
@@ -251,7 +276,8 @@ def main() -> None:
 
     checkpoint = torch.load(best_model_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
-    test_loss, test_rmse = evaluate(model, test_loader, criterion, device)
+    test_predictions, test_targets = predict(model, test_loader, device)
+    test_metrics = compute_regression_metrics(test_targets, test_predictions)
 
     metrics = {
         "data_path": str(data_path),
@@ -263,16 +289,25 @@ def main() -> None:
             "test": int(len(test_idx)),
         },
         "best_val_rmse": checkpoint["val_rmse"],
-        "test_loss": test_loss,
-        "test_rmse": test_rmse,
+        "test_metrics": test_metrics,
     }
 
     (out_dir / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    save_metrics_json(out_dir / "metrics.json", metrics)
+    plot_loss_curve(out_dir / "loss_curve.png", history)
+    plot_pred_vs_actual(out_dir / "pred_vs_actual.png", test_targets, test_predictions)
+    plot_residuals(out_dir / "residuals.png", test_targets, test_predictions)
+    if args.save_test_predictions:
+        save_test_predictions_csv(out_dir / "test_predictions.csv", test_targets, test_predictions)
 
     print(f"Scaler saved to {out_dir / 'scaler.joblib'}")
     print(f"Best checkpoint saved to {best_model_path}")
     print(f"Metrics saved to {out_dir / 'metrics.json'}")
+    print(f"Loss curve saved to {out_dir / 'loss_curve.png'}")
+    print(f"Predicted-vs-actual plot saved to {out_dir / 'pred_vs_actual.png'}")
+    print(f"Residual plot saved to {out_dir / 'residuals.png'}")
+    if args.save_test_predictions:
+        print(f"Test predictions saved to {out_dir / 'test_predictions.csv'}")
 
 
 if __name__ == "__main__":
