@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import torch
+from torch import nn
 
 
 @dataclass
@@ -52,3 +54,35 @@ class LinearRegressionGD:
         model.m = float(payload["m"])
         model.b = float(payload["b"])
         return model
+
+
+class FireRiskRegressor(nn.Module):
+    """Configurable MLP regressor for 7-feature fire-risk inputs."""
+
+    def __init__(
+        self,
+        input_dim: int = 7,
+        hidden_dims: tuple[int, ...] = (64, 32),
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+
+        if len(hidden_dims) == 0:
+            raise ValueError("hidden_dims must include at least one hidden layer size.")
+        if dropout < 0.0 or dropout >= 1.0:
+            raise ValueError("dropout must be in the range [0.0, 1.0).")
+
+        layers: list[nn.Module] = []
+        current_dim = input_dim
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(current_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            if dropout > 0.0:
+                layers.append(nn.Dropout(dropout))
+            current_dim = hidden_dim
+
+        layers.append(nn.Linear(current_dim, 1))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        return self.network(features)

@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import matplotlib
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
 
 DEFAULT_LOW_RISK_THRESHOLD = 33.0
 DEFAULT_HIGH_RISK_THRESHOLD = 66.0
